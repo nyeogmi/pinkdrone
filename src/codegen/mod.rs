@@ -137,13 +137,13 @@ impl Codegen {
                 } 
             }
 
-            Instruction::Call(dest, args, function) => {
-                self.write_call(dest, args, function as u64);
+            Instruction::FFICall(dest, args, function) => {
+                self.write_fficall(dest, args, function as u64);
             }
         }
     }
 
-    fn write_call(&mut self, dest: Dest, args: [Src; 6], function: u64) {
+    fn write_fficall(&mut self, dest: Dest, args: [Src; 6], function: u64) {
         // push rdi;   mov rdi, rax
         let arg0_impl: &[u8] = b"\x57\x48\x89\xc7";
 

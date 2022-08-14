@@ -6,13 +6,22 @@ use crate::{jit_fn::JitFn, instruction::{Instruction, Dest, Src, Count}, interpr
 
 mod codegen;
 mod instruction;
+mod interpreter_fn;
 mod jit_fn;
 mod object;
-mod interpreter_fn;
+mod parser;
 
 fn main() {
-    use Instruction::*;
+    // TODO: Support hex literals again
+    let proc = crate::parser::parse_object("
+        nyeh 16 ().
+        bp-4 D = 305453895.
+        bp-2 H = 3562. 
+        ret bp-4 D.
+    ").unwrap().1;
 
+
+    /*
     let proc = Object {
         instructions: vec![
             Begin(16, [Dest::Nowhere, Dest::Nowhere, Dest::Nowhere, Dest::Nowhere, Dest::Nowhere, Dest::Nowhere]),
@@ -21,7 +30,9 @@ fn main() {
             Ret(Src::Here(-4, Size::D)),
         ]
     };
+    */
 
+    println!("Parsed: {:#?}", proc);
     println!("code:\n{:?}", proc.codegen(0).hex_dump());
 
     let jit_bat: JitFn<(), u64> = JitFn::new(|addr| proc.codegen(addr as u64));

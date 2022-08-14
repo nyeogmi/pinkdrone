@@ -100,7 +100,7 @@ impl InterpreterFn {
                     }
                 }
                 Instruction::Label(_) => {}
-                Instruction::Call(dest, args, func) => {
+                Instruction::FFICall(dest, args, func) => {
                     let result = func(
                         load(&stack, bp, args[0]), load(&stack, bp, args[1]), load(&stack, bp, args[2]),
                         load(&stack, bp, args[3]), load(&stack, bp, args[4]), load(&stack, bp, args[5])

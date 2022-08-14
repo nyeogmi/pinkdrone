@@ -1,5 +1,6 @@
 use crate::{instruction::Instruction, codegen::Codegen};
 
+#[derive(Debug)]
 pub struct Object {
     pub instructions: Vec<Instruction>,
 }

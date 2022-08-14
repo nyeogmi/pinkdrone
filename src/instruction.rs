@@ -1,19 +1,19 @@
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Dest { Nowhere, Ptr(i32, i32, Size), Here(i32, Size) }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Src { Uninitialized, Imm(u64), Ptr(i32, i32, Size), Here(i32, Size) }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum Size { B, H, D, Q }
 
-#[derive(Clone, Copy)]
-pub struct Count(pub usize);
+#[derive(Clone, Copy, Debug)]
+pub struct Count(pub u64);
 
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Label(pub u64);
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Instruction {
     // NOTE: too-small sources will be zero-extended to u64
     // Likewise, too-small destinations will get the low bits of the u64
@@ -26,7 +26,7 @@ pub enum Instruction {
 
     JIf(Src, Label),
     Label(Label),
-    Call(Dest, [Src; 6], extern fn(u64, u64, u64, u64, u64, u64) -> u64),
+    FFICall(Dest, [Src; 6], extern fn(u64, u64, u64, u64, u64, u64) -> u64),
 }
 
 impl Src {
