@@ -44,7 +44,7 @@ impl Codegen {
 
     pub fn write(&mut self, instruction: Instruction) {
         match instruction {
-            Instruction::Begin(n_bytes, args) => {
+            Instruction::FFIBegin(n_bytes, args) => {
                 // prologue
                 self.code.extend([
                     // push rbp,
@@ -82,7 +82,7 @@ impl Codegen {
                     }
                 }
             }
-            Instruction::Ret(src) => {
+            Instruction::FFIRet(src) => {
                 // return value is a u64
                 self.load_rax(src);
 

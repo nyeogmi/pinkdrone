@@ -1,181 +1,127 @@
-use nom::{bytes::complete::tag};
+use std::ops::Range;
+
+use chumsky::{prelude::*, combinator::DelimitedBy, Stream};
 
 use crate::{object::Object, instruction::{Instruction, Dest, Size, Src, Count}};
 
-pub fn parse_object(input: &str) -> nom::IResult<&str, Object> {
-    nom::combinator::all_consuming(parse_object_internal)(input)
-}
-fn parse_object_internal(input: &str) -> nom::IResult<&str, Object> {
-    let (input, instructions) = ws(nom::multi::many0(parse_instruction))(input)?;
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum Token {
+    KWFFIRet, 
+    KWCopy, 
+    KWJif, KWJmp,
 
-    Ok((input, Object { instructions }))
-}
+    KWFFIBegin,  // spelled "ffinyeh"
+    KWFFICall,
 
-fn parse_instruction(input: &str) -> nom::IResult<&str, Instruction> {
-    nom::branch::alt((
-        parse_begin,
-        parse_ret,
-        parse_copy
-    ))(input)
+    LParen, RParen, LBrack, RBrack,
+    Arrow, Minus, Plus, Colon, Comma, Dot, Underscore,
+    Number(u64),
+    Identifier(String),
 }
 
-fn parse_begin(input: &str) -> nom::IResult<&str, Instruction> {
-    // nyeh 180 ~ (bp-4 BYTE, [bp-8] BYTE, [bp-12]->4 DWORD).
-    let (input, _) = ws(tag("nyeh"))(input)?;
-    let (input, n_bytes) = ws(nom::character::complete::u64)(input)?;
-    let (input, mut args) = ws(nom::sequence::delimited(
-        tag("("), 
-        nom::multi::separated_list0(
-            parse_argsep, parse_dest
-        ),
-        tag(")")
-    ))(input)?;
-    let (input, _) = ws(parse_lineterm)(input)?;
+enum Sign { Minus, Plus }
 
-    while args.len() < 6 {
-        args.push(Dest::Nowhere)
-    }
+type Span = Range<usize>;
+type Spanned<T> = (T, Span);
 
-    if args.len() > 6 { return Err(nom::Err::Error(nom::error::make_error(input, nom::error::ErrorKind::Fail))) }
+pub fn parse(code: &str) -> Result<Spanned<Object>, String> {
+    let (tokens, errs) = lexer().then_ignore(end()).parse_recovery(code);
+    let (object, parse_errs) = if let Some(tokens) = tokens {
+        let len = code.chars().count(); // TODO: What's this bit do?
+        parser().then_ignore(end()).parse_recovery(Stream::from_iter(len..len + 1, tokens.into_iter()))
 
-    let args: [Dest; 6] = args.try_into().expect("must have exactly 6 args");
-
-    Ok((input, Instruction::Begin(n_bytes, args)))
-}
-
-fn parse_ret(input: &str) -> nom::IResult<&str, Instruction> {
-    // ret bp-4.
-    let (input, _) = ws(tag("ret"))(input)?;
-    let (input, src) = parse_src(input)?;
-    let (input, _) = parse_lineterm(input)?;
-
-    Ok((input, Instruction::Ret(src)))
-}
-
-fn parse_copy(input: &str) -> nom::IResult<&str, Instruction> {
-    println!("Here: {}", input);
-    // bp-4 = bp-8 (4x).
-    let (input, dest) = parse_dest(input)?;
-    let (input, _) = ws(tag("="))(input)?;
-    let (input, src) = parse_src(input)?;
-    let (input, count) = nom::combinator::opt(parse_count)(input)?;
-    let (input, _) = parse_lineterm(input)?;
-    
-    Ok((input, Instruction::Copy(dest, src, count.unwrap_or(Count(1)))))
-}
-
-fn parse_count(input: &str) -> nom::IResult<&str, Count> {
-    let (input, _) = ws(tag("("))(input)?;
-    let (input, n) = ws(nom::sequence::delimited(
-        nom::combinator::success( () ), 
-        nom::character::complete::u64,
-        tag("x"),
-    ))(input)?;
-    let (input, _) = ws(tag(")"))(input)?;
-    Ok((input, Count(n)))
-}
-
-fn parse_dest(input: &str) -> nom::IResult<&str, Dest> {
-    nom::branch::alt((parse_dest_nowhere, parse_dest_ptr, parse_dest_here))(input)
-}
-
-fn parse_dest_nowhere(input: &str) -> nom::IResult<&str, Dest> {
-    let (input, _) = ws(tag("_"))(input)?;
-    Ok((input, Dest::Nowhere))
-}
-
-fn parse_dest_ptr(input: &str) -> nom::IResult<&str, Dest> {
-    let (input, _) = ws(tag("["))(input)?;
-    let (input, offset_to_ptr) = parse_here_expr(input)?;
-    let (input, _) = ws(tag("]"))(input)?;
-    let (input, offset_after_ptr) = nom::combinator::opt(parse_field_tag)(input)?;
-    let (input, size) = parse_size(input)?;
-
-    Ok((input, Dest::Ptr(offset_to_ptr, offset_after_ptr.unwrap_or(0), size)))
-}
-
-fn parse_dest_here(input: &str) -> nom::IResult<&str, Dest> {
-    let (input, stack_position) = parse_here_expr(input)?;
-    let (input, size) = parse_size(input)?;
-
-    Ok((input, Dest::Here(stack_position, size)))
-}
-
-fn parse_src(input: &str) -> nom::IResult<&str, Src> {
-    nom::branch::alt((parse_src_imm, parse_src_ptr, parse_src_here))(input)
-}
-
-fn parse_src_imm(input: &str) -> nom::IResult<&str, Src> {
-    let (input, immediate) = ws(nom::character::complete::u64)(input)?;
-    return Ok((input, Src::Imm(immediate)))
-}
-
-fn parse_src_ptr(input: &str) -> nom::IResult<&str, Src> {
-    let (input, _) = ws(tag("["))(input)?;
-    let (input, offset_to_ptr) = parse_here_expr(input)?;
-    let (input, _) = ws(tag("]"))(input)?;
-    let (input, offset_after_ptr) = nom::combinator::opt(parse_field_tag)(input)?;
-    let (input, size) = parse_size(input)?;
-
-    Ok((input, Src::Ptr(offset_to_ptr, offset_after_ptr.unwrap_or(0), size)))
-}
-
-fn parse_src_here(input: &str) -> nom::IResult<&str, Src> {
-    let (input, stack_position) = parse_here_expr(input)?;
-    let (input, size) = parse_size(input)?;
-
-    Ok((input, Src::Here(stack_position, size)))
-}
-
-fn parse_here_expr(input: &str) -> nom::IResult<&str, i32>{
-    let (input, _) = ws(tag("bp"))(input)?;
-    let (input, sign) = ws(nom::branch::alt((tag("-"), tag("+"))))(input)?;
-    let (input, amt) = ws(nom::character::complete::i32)(input)?;
-
-    Ok((input, if sign == "-" {
-        -amt
     } else {
-        amt
-    }))
+        (None, vec![])
+    };
+
+    if errs.len() > 0 { return Err(format!("lexer error: {:?}", errs)); }
+    if parse_errs.len() > 0 { return Err(format!("parser error: {:?}", parse_errs)); }
+    if let Some(obj) = object {
+        return Ok(obj)
+    }
+    // TODO: Report errors
+    return Err(format!("no object??? weird"));
 }
 
-fn parse_field_tag(input: &str) -> nom::IResult<&str, i32> {
-    let (input, _) = ws(tag("->"))(input)?;
-    let (input, offset) = ws(nom::character::complete::i32)(input)?;
-    Ok((input, offset))
+fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error=Simple<char>> + Clone {
+    let hex_number = 
+        just("0x").ignore_then(
+            text::int(16).padded()
+            .map(|s: String| u64::from_str_radix(&s, 16).unwrap())
+        );
+
+    let decimal_number = 
+        text::int(10).padded()
+        .map(|s: String| s.parse::<u64>().unwrap());
+
+    let number = hex_number.or(decimal_number);
+
+    let comment = just("%").then(take_until(just('\n'))).padded();
+
+    return choice((
+        just("ffinyeh").map(|_| Token::KWFFIBegin),
+        just("ffiret").map(|_| Token::KWFFIRet),
+        just("copy").map(|_| Token::KWCopy),
+        just("jif").map(|_| Token::KWJif),
+        just("jmp").map(|_| Token::KWJmp),
+        just("fficall").map(|_| Token::KWFFICall),
+        just("(").map(|_| Token::LParen),
+        just(")").map(|_| Token::RParen),
+        just("[").map(|_| Token::LBrack),
+        just("]").map(|_| Token::RBrack),
+        just("->").map(|_| Token::Arrow),
+        just("-").map(|_| Token::Minus),
+        just("+").map(|_| Token::Plus),
+        just(":").map(|_| Token::Colon),
+        just(",").map(|_| Token::Comma),
+        just(".").map(|_| Token::Dot),
+        just("_").map(|_| Token::Underscore),
+        number.map(|i| Token::Number(i)),
+        text::ident().map(|s: String| Token::Identifier(s)),
+    ))
+        .map_with_span(|tok, span| (tok, span))
+        .padded_by(comment.repeated())
+        .padded()
+        .repeated()
 }
 
-fn parse_size(input: &str) -> nom::IResult<&str, Size> {
-    let (input, result) = ws(nom::branch::alt((
-        nom::combinator::value(Size::B, tag("B")),
-        nom::combinator::value(Size::H, tag("H")),
-        nom::combinator::value(Size::D, tag("D")),
-        nom::combinator::value(Size::Q, tag("Q")),
-    )))(input)?;
+fn parser() -> impl Parser<Token, Spanned<Object>, Error=Simple<Token>> + Clone {
+    let signed_number = 
+        choice((just(Token::Minus), just(Token::Plus))).or_not()
+        .then(select! { Token::Number(u) => u })
+        .map(
+            |(sign, num)| 
+            (match sign { 
+                Some(Token::Minus) => Sign::Minus,
+                _ => Sign::Plus
+            }, num)
+        );
 
-    Ok((input, result))
-}
+    let dest = just(Token::Underscore).map(|_| Dest::Nowhere);
 
-fn parse_lineterm(input: &str) -> nom::IResult<&str, ()> {
-    let (input, _) = ws(tag("."))(input)?;
-    Ok((input, ()))
-}
+    let ffi_begin = just(Token::KWFFIBegin).ignore_then(signed_number).then(
+        dest
+        .separated_by(just(Token::Comma))
+        .delimited_by(just(Token::LParen), just(Token::RParen))
+    ).then_ignore(just(Token::Dot))
+    .try_map(|((sign, n_bytes), destinations), span: Span| {
+        if let Sign::Minus = sign { return Err(Simple::custom(span, "can't have a negative-sized frame")) };
+        if destinations.len() > 6 { return Err(Simple::custom(span, "can't have > 6 destinations"))}
+        let mut real_destinations = [Dest::Nowhere; 6];
+        real_destinations[..destinations.len()].clone_from_slice(&destinations);
+        Ok(Instruction::FFIBegin(n_bytes, real_destinations))
+    });
 
-fn parse_argsep(input: &str) -> nom::IResult<&str, ()> {
-    let (input, _) = ws(tag(","))(input)?;
-    Ok((input, ()))
-}
-
-// from: https://docs.rs/nom/latest/nom/recipes/index.html
-/// A combinator that takes a parser `inner` and produces a parser that also consumes both leading and 
-/// trailing whitespace, returning the output of `inner`.
-fn ws<'a, F: 'a, O, E: nom::error::ParseError<&'a str>>(inner: F) -> impl FnMut(&'a str) -> nom::IResult<&'a str, O, E>
-  where
-  F: FnMut(&'a str) -> nom::IResult<&'a str, O, E>,
-{
-  nom::sequence::delimited(
-    nom::character::complete::multispace0,
-    inner,
-    nom::character::complete::multispace0
-  )
+    /*
+    let instruction = choice((
+        // FFIBegin
+        ffi_begin,
+        ffi_begin,
+    )).map_with_span(|instruction, span| (instruction, span));
+    
+    instruction.repeated()
+    */
+    ffi_begin.map_with_span(|i, s| (i, s)).repeated()
+    .map(|instructions| Object { instructions: instructions.into_iter().map(|(x, span)| x).collect() })
+    .map_with_span(|o, s| (o, s))
 }

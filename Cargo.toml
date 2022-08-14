@@ -9,4 +9,4 @@ edition = "2021"
 libc = "0.2.2"
 winapi = { version = "0.3", features = ["memoryapi"] }
 pretty-hex = "0.3"
-nom = "7.1"
+chumsky = "0.8"

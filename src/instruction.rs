@@ -19,8 +19,8 @@ pub enum Instruction {
     // Likewise, too-small destinations will get the low bits of the u64
 
     // prologue, allocs space for n_bytes the stack, saves args to destinations
-    Begin(u64, [Dest; 6]),   
-    Ret(Src),
+    FFIBegin(u64, [Dest; 6]),   
+    FFIRet(Src),
 
     Copy(Dest, Src, Count),
 

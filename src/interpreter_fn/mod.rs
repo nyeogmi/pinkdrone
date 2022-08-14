@@ -74,7 +74,7 @@ impl InterpreterFn {
             }
 
             match self.code[ip] {
-                Instruction::Begin(n_bytes, args) => {
+                Instruction::FFIBegin(n_bytes, args) => {
                     sp = bp - n_bytes as usize;
                     store(&mut stack, bp, args[0], arg0);
                     store(&mut stack, bp, args[1], arg1);
@@ -83,7 +83,7 @@ impl InterpreterFn {
                     store(&mut stack, bp, args[4], arg4);
                     store(&mut stack, bp, args[5], arg5);
                 }
-                Instruction::Ret(src) => {
+                Instruction::FFIRet(src) => {
                     return load(&mut stack, bp, src);
                 }
                 Instruction::Copy(dest, src, count) => {

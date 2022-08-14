@@ -1,3 +1,4 @@
+use chumsky::Parser;
 use instruction::Size;
 use object::Object;
 use pretty_hex::*;
@@ -13,13 +14,17 @@ mod parser;
 
 fn main() {
     // TODO: Support hex literals again
-    let proc = crate::parser::parse_object("
+    let proc = crate::parser::parse("
+        ffinyeh 0x10 ().
+    ").map(|(o, s)| o);
+    /*
+    let proc = crate::parser::parse("
         nyeh 16 ().
         bp-4 D = 305453895.
         bp-2 H = 3562. 
         ret bp-4 D.
-    ").unwrap().1;
-
+    ").map(|(o, s)| o);
+    */
 
     /*
     let proc = Object {
@@ -33,6 +38,9 @@ fn main() {
     */
 
     println!("Parsed: {:#?}", proc);
+    return;
+
+    let proc = proc.unwrap();
     println!("code:\n{:?}", proc.codegen(0).hex_dump());
 
     let jit_bat: JitFn<(), u64> = JitFn::new(|addr| proc.codegen(addr as u64));
